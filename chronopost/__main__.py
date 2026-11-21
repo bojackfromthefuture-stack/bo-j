@@ -8,7 +8,7 @@ import sys
 import time
 
 from . import future, past
-from .physics import dimensions as D, particles as P, relativity as R, wormhole as W
+from .physics import dimensions as D, particles as P, relativity as R, waves as WV, wormhole as W
 
 
 def _bar(frac: float) -> None:
@@ -159,8 +159,40 @@ def ph_cycle():
     print("  a symmetry of the equations (CPT), not a channel: no message can ride it.")
 
 
+def ph_waves():
+    vp, vg = WV.plasma_velocities(2.0, 1.0)
+    print("Plasma at twice its plasma frequency:")
+    print(f"  phase velocity {vp:.3f}c (> c), group velocity {vg:.3f}c (< c), product {vp * vg:.3f}c^2")
+    r = WV.superluminal_pulse()
+    print("Pulse through a gain-doublet cell (Wang-Kuzmich-Dogariu 2000 style), c = 1, L = 0.45:")
+    print(f"  group index {r.group_index:+.2f}: the peak exits {r.peak_advance:.2f} time units early;"
+          f" before it enters? {r.peak_exits_before_entering}")
+    print(f"  if the signal moved at v_g it would exit {-r.group_velocity_front:.2f} before it was switched on")
+    print(f"  actual output before light could arrive: {r.leak_before_light:.1e} of peak (rounding error)")
+    print(f"  output in the 3 time units after light arrives: {r.signal_just_after_light:.1e} of peak")
+    print("  => the front moves at exactly c. The early peak carries no new information.")
+    print("Time-reversal cavity (Fink): record a scattered pulse at two mirrors, play it backwards:")
+    for label, kw in [("lossless, both mirrors", {}), ("one mirror only", {"mirror": "left"}),
+                      ("strong disorder (localization)", {"contrast": 0.3}),
+                      ("1% damping per step", {"damping": 0.01})]:
+        t = WV.time_reversal_cavity(**kw)
+        print(f"  {label:<31} fidelity {t.fidelity:.3f}, refocused amplitude {t.amplitude:.3f}")
+    print("  => waves run backwards perfectly only if nothing is lost: loss is the arrow of time.")
+    a = WV.absorber_theory()
+    print("Wheeler-Feynman absorber theory (advanced = backwards-in-time waves):")
+    print(f"  field before emission, time-symmetric source alone: {a.max_field_before_emission_symmetric:.3f}")
+    print(f"  field before emission, with the universe's absorber:  {a.max_field_before_emission_total:.1e}")
+    mc = WV.chirp_mass(36, 29)
+    print("Gravitational waves:")
+    print(f"  GW150914 (36 + 29 Msun): chirp mass {mc:.1f} Msun, 35 Hz -> merger in "
+          f"{WV.time_to_merger(35, mc):.2f} s; the signal left {WV.lookback_years(410) / 1e9:.1f} Gyr ago")
+    print(f"  GW170817: 1.7 s gap after {WV.lookback_years(40) / 1e6:.0f} Myr -> "
+          f"|v_gw - c|/c < {WV.gw_speed_bound():.0e}")
+
+
 TOPICS = {"antitelephone": ph_antitelephone, "gps": ph_gps, "rocket": ph_rocket,
-          "wormhole": ph_wormhole, "dimensions": ph_dimensions, "cycle": ph_cycle}
+          "wormhole": ph_wormhole, "dimensions": ph_dimensions, "cycle": ph_cycle,
+          "waves": ph_waves}
 
 
 def cmd_physics(a):
@@ -205,7 +237,7 @@ def main(argv=None):
     pa.add_argument("scenario", nargs="?", default="all", choices=["all", *past.SCENARIOS])
     pa.set_defaults(fn=cmd_past)
 
-    ph = sub.add_parser("physics", help="real-physics simulations: relativity, wormholes, dimensions, matter/energy")
+    ph = sub.add_parser("physics", help="real-physics simulations: relativity, wormholes, dimensions, matter/energy, waves")
     ph.add_argument("topic", nargs="?", default="all", choices=["all", *TOPICS])
     ph.set_defaults(fn=cmd_physics)
 

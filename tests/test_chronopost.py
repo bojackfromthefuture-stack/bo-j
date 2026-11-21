@@ -234,3 +234,63 @@ def test_feynman_stueckelberg_single_worldline():
     assert segs[1].t_end < segs[1].t_start                  # backwards in time
     assert segs[0].t_end == segs[1].t_start and segs[1].t_end == segs[2].t_start
     assert segs[0].x_end == segs[1].x_start and segs[1].x_end == segs[2].x_start
+
+
+# -------------------------------------------------------------- waves ---
+
+from chronopost.physics import waves as WV
+
+
+def test_fft_roundtrip_and_known_transform():
+    import random
+    x = [random.Random(1).random() for _ in range(128)]
+    assert max(abs(a - b) for a, b in zip(x, WV.fft(WV.fft(x), inverse=True))) < 1e-12
+    X = WV.fft([math.cos(2 * math.pi * 3 * k / 64) for k in range(64)])
+    assert abs(X[3]) == pytest.approx(32) and abs(X[61]) == pytest.approx(32)
+
+
+def test_plasma_phase_times_group_is_c_squared():
+    vp, vg = WV.plasma_velocities(3.0, 1.2)
+    assert vp > 1 > vg and vp * vg == pytest.approx(1.0)
+
+
+def test_vacuum_propagation_is_pure_delay():
+    dt, L = 0.05, 2.0
+    sig = [math.exp(-((k * dt - 50) / 3) ** 2) for k in range(2048)]
+    out = WV.propagate(sig, dt, lambda w: 0j, L)
+    shift = int(round(L / dt))
+    assert max(abs(out[k + shift] - sig[k]) for k in range(1500)) < 1e-9
+
+
+def test_superluminal_peak_but_luminal_front():
+    r = WV.superluminal_pulse()
+    assert r.group_index < 0
+    assert r.peak_exits_before_entering and r.peak_advance > 0
+    assert r.group_velocity_front < 0            # naive v_g picture: out before switched on
+    assert r.leak_before_light < 1e-10           # reality: nothing before t_on + L/c
+    assert r.signal_just_after_light > 1e-4      # and something right after it
+
+
+def test_absorber_cancels_advanced_waves():
+    a = WV.absorber_theory()
+    assert a.max_field_before_emission_symmetric > 0.4
+    assert a.max_field_before_emission_total < 1e-12
+    assert a.max_error_vs_retarded < 1e-12
+
+
+def test_time_reversal_cavity():
+    full = WV.time_reversal_cavity()
+    assert full.fidelity > 0.99 and full.amplitude == pytest.approx(1, abs=0.02)
+    assert full.focus_error == 0
+    one = WV.time_reversal_cavity(mirror="left")
+    lossy = WV.time_reversal_cavity(damping=0.01)
+    assert one.amplitude < 0.8 and lossy.amplitude < 0.2 and lossy.fidelity < full.fidelity
+
+
+def test_gravitational_waves():
+    mc = WV.chirp_mass(36, 29)
+    assert mc == pytest.approx(28.1, abs=0.2)          # LIGO: ~28-30 Msun (detector frame ~30)
+    assert 0.1 < WV.time_to_merger(35, mc) < 0.3        # observed ~0.2 s in band
+    f = [p[1] for p in WV.chirp(35, mc)]
+    assert all(b > a for a, b in zip(f, f[1:]))
+    assert WV.gw_speed_bound() < 1e-15

@@ -41,12 +41,14 @@ histories are the ones where the past self already holds the answer.
 ## Real physics
 
 ```sh
-python -m chronopost physics    # antitelephone, gps, rocket, wormhole, dimensions, cycle
+python -m chronopost physics    # antitelephone, gps, rocket, wormhole, dimensions, cycle, waves
 ```
 Relativistic time dilation, the tachyonic antitelephone, a Morris-Thorne-Yurtsever wormhole
 time machine, orbits in n dimensions, Kaluza-Klein towers, closed timelike curves with two
 time dimensions, and the matter -> energy -> matter cycle (annihilation and Breit-Wheeler
-pair creation, with exact four-momentum conservation). See [ANALYSIS.md](ANALYSIS.md).
+pair creation, with exact four-momentum conservation), and waves (phase/group/front velocity
+with a negative-group-velocity pulse, Fink time-reversal mirrors, Wheeler-Feynman advanced
+waves, gravitational-wave chirps). See [ANALYSIS.md](ANALYSIS.md).
 
 ## Development
 
