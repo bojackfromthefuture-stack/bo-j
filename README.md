@@ -16,8 +16,9 @@ python -m chronopost open capsule.json              # ~1 hour of work on similar
 ```
 
 The capsule JSON can be published: it contains no shortcut to the key.
-Note: faster hardware opens a capsule sooner, so the delay is an estimate for a given
-speed, not a guarantee. This is a learning tool, not audited cryptography.
+Format v2 authenticates every field, enforces 2048-bit moduli, pads the message length,
+calibrates against GMP-speed attackers (install `gmpy2` to open ~5x faster), and supports
+`open --checkpoint` to resume. Read [SECURITY.md](SECURITY.md) for the threat model.
 
 ## To the past: simulated
 
@@ -37,9 +38,19 @@ python -m chronopost past            # grandfather, bootstrap, prophecy, noisy-g
 it solves the problem, and otherwise sends the next candidate. The only consistent
 histories are the ones where the past self already holds the answer.
 
+## Real physics
+
+```sh
+python -m chronopost physics    # antitelephone, gps, rocket, wormhole, dimensions, cycle
+```
+Relativistic time dilation, the tachyonic antitelephone, a Morris-Thorne-Yurtsever wormhole
+time machine, orbits in n dimensions, Kaluza-Klein towers, closed timelike curves with two
+time dimensions, and the matter -> energy -> matter cycle (annihilation and Breit-Wheeler
+pair creation, with exact four-momentum conservation). See [ANALYSIS.md](ANALYSIS.md).
+
 ## Development
 
 ```sh
 python -m pytest
 ```
-No dependencies beyond the Python 3.10+ standard library.
+No required dependencies beyond the Python 3.10+ standard library; `gmpy2` is optional.
