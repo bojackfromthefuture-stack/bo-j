@@ -1,0 +1,9 @@
+[project]
+name = "chronopost"
+version = "0.1.0"
+description = "Time-lock messages to the future; simulated retrocausal channels to the past"
+requires-python = ">=3.10"
+readme = "README.md"
+
+[project.scripts]
+chronopost = "chronopost.__main__:main"

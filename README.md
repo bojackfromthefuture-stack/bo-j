@@ -1,0 +1,45 @@
+# chronopost
+
+Moving information through time, in both directions, as far as physics allows.
+
+## To the future: real
+
+`chronopost.future` uses **time-lock puzzles** (Rivest, Shamir and Wagner, 1996). A sealed
+capsule can only be opened after `t` *sequential* modular squarings. That work can't be
+spread across more machines, so `t` sets how far into the future the message arrives.
+The sender knows the factors of `n`, so sealing takes no time at all.
+
+```sh
+python -m chronopost calibrate                      # squarings/sec on this machine
+python -m chronopost seal "hello, future" --seconds 3600 -o capsule.json
+python -m chronopost open capsule.json              # ~1 hour of work on similar hardware
+```
+
+The capsule JSON can be published: it contains no shortcut to the key.
+Note: faster hardware opens a capsule sooner, so the delay is an estimate for a given
+speed, not a guarantee. This is a learning tool, not audited cryptography.
+
+## To the past: simulated
+
+No known physics sends information backwards in time. `chronopost.past` simulates what
+such a channel would *have to obey* if closed timelike curves existed:
+
+| Model | Rule | Grandfather paradox |
+|---|---|---|
+| **Novikov** | only self-consistent histories happen (`respond(m) == m`) | impossible: no history exists |
+| **Deutsch (1991)** | the loop settles into a stationary distribution | resolves into a 50/50 mixture |
+
+```sh
+python -m chronopost past            # grandfather, bootstrap, prophecy, noisy-grandfather, factoring
+```
+
+`ctc_solve` shows time-loop computing: the future self sends back the input unchanged if
+it solves the problem, and otherwise sends the next candidate. The only consistent
+histories are the ones where the past self already holds the answer.
+
+## Development
+
+```sh
+python -m pytest
+```
+No dependencies beyond the Python 3.10+ standard library.
