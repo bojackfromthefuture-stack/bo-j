@@ -8,14 +8,15 @@ import sys
 import time
 
 from . import future, past
-from .physics import dimensions as D, particles as P, relativity as R, waves as WV, wormhole as W
+from .physics import dimensions as D, entropy as EN, particles as P, relativity as R, squeezing as SQ, \
+    twotime as TT, waves as WV, wormhole as W
 
 
-def _bar(frac: float) -> None:
+def _bar(phase: str, frac: float) -> None:
     width = 40
     done = int(frac * width)
     end = "\n" if frac >= 1 else ""
-    sys.stderr.write(f"\r  [{'#' * done}{'.' * (width - done)}] {frac:6.1%}{end}")
+    sys.stderr.write(f"\r  {phase:<9} [{'#' * done}{'.' * (width - done)}] {frac:6.1%}{end}")
     sys.stderr.flush()
 
 
@@ -28,22 +29,28 @@ def cmd_calibrate(a):
     if cal.backend == "python":
         print("  note: gmpy2 not installed; attacker rate scaled by "
               f"{future.PYTHON_VS_GMP_FACTOR}x (pip install gmpy2 to open faster)")
+    print(f"hash chain: {cal.hash_local_rate:,.0f} SHA-256/s here (1 core, {cal.cores} cores); "
+          f"assumed attacker {cal.hash_attacker_rate:,.0f}/s")
     for label, s in [("1 minute", 60), ("1 hour", 3600), ("1 day", 86400), ("1 year", 31_557_600)]:
-        print(f"  {label:>8}: t = {cal.t_for(s):,}")
+        h = cal.hashes_for(s)
+        print(f"  {label:>8}: t = {cal.t_for(s):,} squarings | {h:,} hashes "
+              f"(sealing the chain here: {future._fmt(cal.seal_seconds(h))})")
 
 
 def cmd_seal(a):
     msg = a.message.encode() if a.message is not None else sys.stdin.buffer.read()
-    cal = None
-    if a.t is None:
-        cal = future.calibrate(a.bits, attacker_speedup=a.attacker_speedup)
-    cap = future.seal(msg, t=a.t, seconds=a.seconds, modulus_bits=a.bits, note=a.note,
-                      calibration=cal, pad_to=a.pad, allow_insecure=a.allow_insecure)
+    cal = future.calibrate(a.bits, attacker_speedup=a.attacker_speedup)
+    if a.seconds and a.mode != "rsw":
+        est = cal.seal_seconds(cal.hashes_for(a.seconds))
+        print(f"building the hash chain takes about {future._fmt(est)} on {cal.cores} cores "
+              "(post-quantum locks have no trapdoor)", file=sys.stderr)
+    cap = future.seal(msg, mode=a.mode, t=a.t, chain_hashes=a.hashes, seconds=a.seconds,
+                      modulus_bits=a.bits, note=a.note, calibration=cal, links=a.links,
+                      pad_to=a.pad, allow_insecure=a.allow_insecure)
     with open(a.out, "w") as f:
         f.write(cap.to_json())
-    print(f"sealed {len(msg)} bytes into {a.out} (id {cap.capsule_id()}, t = {cap.t:,})")
-    if cal:
-        print("  " + cal.describe(cap.t))
+    print(f"sealed {len(msg)} bytes into {a.out} (id {cap.capsule_id()}, mode {cap.mode})")
+    print("  " + cal.describe(cap))
 
 
 def cmd_open(a):
@@ -51,10 +58,15 @@ def cmd_open(a):
         cap = future.TimeCapsule.from_json(f.read(), min_bits=0 if a.allow_insecure else future.MIN_MODULUS_BITS)
     if cap.note:
         print(f"note (authenticated): {cap.note}", file=sys.stderr)
-    print(f"opening {cap.capsule_id()}: {cap.t:,} sequential squarings ({future.BACKEND})",
-          file=sys.stderr)
+    work = []
+    if cap.uses_rsw:
+        work.append(f"{cap.t:,} squarings ({future.BACKEND})")
+    if cap.uses_chain:
+        work.append(f"{cap.chain_total:,} hashes in {len(cap.chain_links) + 1} links")
+    print(f"opening {cap.capsule_id()} [{cap.mode}]: " + " + ".join(work), file=sys.stderr)
     start = time.perf_counter()
-    msg = future.open_capsule(cap, progress=_bar, checkpoint=a.checkpoint)
+    msg = future.open_capsule(cap, progress=None if a.parallel else _bar,
+                              checkpoint=a.checkpoint, parallel=a.parallel)
     print(f"opened in {time.perf_counter() - start:.1f}s", file=sys.stderr)
     sys.stdout.buffer.write(msg + b"\n")
 
@@ -190,9 +202,99 @@ def ph_waves():
           f"|v_gw - c|/c < {WV.gw_speed_bound():.0e}")
 
 
+def ph_twotime():
+    print("1. Is there a past and a future? (connected pieces of the timelike directions)")
+    for t, x in [(1, 1), (1, 2), (2, 1)]:
+        print(f"  {t} time + {x} space: {TT.timelike_components(t, x)} piece(s); "
+              f"forward can be turned into backward: {TT.reverse_time_continuously(t)}")
+    print("  => with two times there is no invariant arrow, and a circle in (t1, t2) is a time loop.")
+    print("2. Can the future be predicted? Waves with two times, random data at t1 = 0, evolved to t1 = 1:")
+    for m in [8, 16, 32, 64]:
+        free, con = TT.ultrahyperbolic(m), TT.ultrahyperbolic(m, constrained=True)
+        print(f"  resolution {m:>2}: free data amplified x{free.amplification:.1e} | "
+              f"Craig-Weinstein-constrained data x{con.amplification:.2f}")
+    print("  => free local causes: unpredictable (Hadamard). Nonlocally constrained causes: deterministic.")
+    print("3. If time loops (circle of length T = 1):")
+    for label, A in [("oscillator, omega = 2pi", TT.oscillator(2 * math.pi)),
+                     ("oscillator, omega = 2.2pi", TT.oscillator(2.2 * math.pi)),
+                     ("damped oscillator, omega = 2pi", TT.oscillator(2 * math.pi, 0.1))]:
+        print(f"  {label:<31}: {TT.loop_consistent_dimension(A, 1.0)} independent consistent histories")
+    print(f"  allowed frequencies: {', '.join(f'{w:.2f}' for w in TT.allowed_frequencies(1.0, 4))} ... "
+          "(E_n = n h / T: a time loop quantises energy)")
+    for label, f in [("billiard ball (continuous)", TT.billiard_ball()),
+                     ("billiard ball, many solutions", TT.wobbly_billiard()),
+                     ("grandfather (yes/no rule)", TT.grandfather_step())]:
+        sols = TT.consistent_histories(f)
+        print(f"  {label:<31}: consistent histories at x = {[round(v, 3) for v in sols] or 'none: paradox'}")
+    print("  => continuous physics always finds a consistent loop (Brouwer); only all-or-nothing rules fail.")
+    print("4. Bars's two-time physics: a gauge symmetry removes the extra time; ordinary physics is its shadow.")
+
+
+def ph_sidis():
+    print("W. J. Sidis, The Animate and the Inanimate (1925), tested claim by claim.")
+    k = EN.kac_ring()
+    print("A. Reversible laws -> statistical second law (Kac ring, 2000 sites):")
+    print(f"  entropy 0 -> {k.entropy[150]:.3f} (max ln2 = 0.693) after 150 steps; reverse the motion -> "
+          f"{k.entropy[-1]:.3f}; exact return: {k.returned_exactly}")
+    k2 = EN.kac_ring(reverse_error=0.01)
+    print(f"  imperfect reversal (1% of markers moved): back to {k2.entropy[-1]:.3f}, not 0")
+    print(f"  Poincare recurrence: the whole state repeats after {k.recurrence_step} steps")
+    print("B. Reversed regions exist, but rarely (fluctuation theorem, exact):")
+    for n in [10, 100, 1000]:
+        f = EN.fluctuation_theorem(n)
+        print(f"  watched for {n:>4} steps: P(entropy decreased) = {f.p_entropy_decrease:.2e}")
+    sig, lnratio = EN.fluctuation_theorem(100).ratio_checks[2]
+    print(f"  ln[P(+s)/P(-s)] = {lnratio:.6f} for s = {sig:.6f}: equal, as the theorem says")
+    print(f"  odds of any system spontaneously lowering its entropy by just 1 J/K: e^-{1 / EN.K_B:.1e}")
+    u = EN.two_boundary_urn()
+    pts = ", ".join(f"{x:.1f}" for x in u.entropy_two_boundary[::12])
+    print(f"  Schulman: low entropy at BOTH ends of time (40-ball urn): S(t) = {pts}")
+    print("  => the second half runs with a reversed arrow: Sidis's reversal, set by a future boundary.")
+    d = EN.maxwell_demon()
+    print("C. Life as a reversal? A demon sorting 60 molecules into one box:")
+    print(f"  gas entropy lowered by {d.gas_entropy_drop_bits:.1f} bits; memory recorded {d.memory_bits:.1f} bits;"
+          f" erasing it costs >= {d.erasure_cost_bits:.1f} bits; second law holds: {d.second_law_holds}")
+    e = EN.earth_budget()
+    print(f"  Earth: sunlight in {e.entropy_in_w_per_k:.1e} W/K, infrared out {e.entropy_out_w_per_k:.1e} W/K,"
+          f" export {e.export_w_per_k:.1e} W/K; a person ~{EN.human_entropy_production():.2f} W/K")
+    print("  => life lowers its own entropy by exporting more; it rides the second law, not against it.")
+    b = EN.black_hole()
+    print("D. Dark, light-absorbing stars? Black holes, yes, but the opposite of a reversal:")
+    print(f"  1 Msun hole: entropy {b.entropy_over_k:.1e} k vs the Sun's ~{EN.sun_entropy_over_k():.0e} k;"
+          f" Hawking T = {b.hawking_temperature_k:.1e} K; evaporates in {b.evaporation_years:.0e} yr")
+    print("E. No heat death? Open: a low-entropy Big Bang is observed; recurrences need ~e^(10^122) years.")
+
+
+def ph_squeezing():
+    r = SQ.r_from_db(10)
+    vs, va = SQ.variances(r)
+    print("Squeezed light: quantum noise moved from one quadrature to the other (vacuum = 0.25):")
+    print(f"  10 dB: amplitude variance {vs:.4f}, phase variance {va:.3f}, product {vs * va:.4f} = 1/16 (minimum)")
+    P = SQ.photon_distribution(1.0, 8)
+    print(f"  photons come in pairs (r = 1): P(0..6) = {', '.join(f'{x:.3f}' for x in P[:7])}")
+    print("What survives a real detector (15 dB made):")
+    for eta, jit in [(1.0, 0.0), (0.97, 0.0), (0.97, 0.002), (0.90, 0.0), (0.70, 0.0)]:
+        m = SQ.with_losses(SQ.r_from_db(15), eta, jit)
+        print(f"  efficiency {eta:.2f}, phase jitter {jit * 1000:.0f} mrad -> {m.squeezed_db:5.2f} dB below vacuum")
+    print("Gravitational-wave detector quantum noise, relative to the standard quantum limit (6 dB):")
+    print("     f [Hz]   no squeezing   fixed angle   frequency-dependent")
+    for f in [10, 30, 100, 300, 1000]:
+        print(f"  {f:>8} {SQ.interferometer_noise(f):14.3f} {SQ.interferometer_noise(f, SQ.r_from_db(6)):13.3f}"
+              f" {SQ.interferometer_noise(f, SQ.r_from_db(6), frequency_dependent=True):21.3f}")
+    print("  => fixed squeezing trades shot noise for radiation pressure; rotating it (LIGO since 2023)"
+          " wins everywhere, even below the SQL.")
+    t = SQ.two_mode(1.0)
+    print("Two-mode squeezing = EPR entanglement. Bob's X variance when Alice does nothing / measures X / P:")
+    print(f"  {t.bob_variance_alice_idle:.3f} / {t.bob_variance_alice_measures_x:.3f} / "
+          f"{t.bob_variance_alice_measures_p:.3f}  (no signal)")
+    print(f"  with Alice's result in hand: {t.conditional_variance:.3f}; EPR product {t.epr_product:.4f} < 1/16;"
+          f" Duan sum {t.duan_sum:.3f} < 1 (entangled)")
+    print("  => correlations need Alice's light-speed message: squeezing sharpens, it never sends back.")
+
+
 TOPICS = {"antitelephone": ph_antitelephone, "gps": ph_gps, "rocket": ph_rocket,
           "wormhole": ph_wormhole, "dimensions": ph_dimensions, "cycle": ph_cycle,
-          "waves": ph_waves}
+          "waves": ph_waves, "squeezing": ph_squeezing, "twotime": ph_twotime, "sidis": ph_sidis}
 
 
 def cmd_physics(a):
@@ -215,9 +317,14 @@ def main(argv=None):
 
     s = sub.add_parser("seal", help="send a message to the future")
     s.add_argument("message", nargs="?", help="text (default: read stdin)")
-    g = s.add_mutually_exclusive_group(required=True)
+    g = s.add_mutually_exclusive_group()
     g.add_argument("--seconds", type=float, help="minimum delay against the assumed attacker")
-    g.add_argument("-t", type=int, help="exact number of squarings")
+    g.add_argument("-t", type=int, help="exact number of squarings (rsw/hybrid)")
+    s.add_argument("--hashes", type=int, help="exact total hash-chain length (hashchain/hybrid)")
+    s.add_argument("--mode", choices=future.MODES, default="hybrid",
+                   help="rsw: instant to seal, broken by quantum computers; hashchain: post-quantum, "
+                        "sealer does the work in parallel; hybrid (default): both")
+    s.add_argument("--links", type=int, help="parallel hash-chain links (default 4 per core)")
     s.add_argument("-o", "--out", default="capsule.json")
     s.add_argument("--bits", type=int, default=future.MIN_MODULUS_BITS)
     s.add_argument("--attacker-speedup", type=float, default=1.0,
@@ -230,6 +337,7 @@ def main(argv=None):
     o = sub.add_parser("open", help="do the work and read a capsule")
     o.add_argument("capsule")
     o.add_argument("--checkpoint", help="file to save/resume progress")
+    o.add_argument("--parallel", action="store_true", help="hybrid: run both locks at once on two cores")
     o.add_argument("--allow-insecure", action="store_true")
     o.set_defaults(fn=cmd_open)
 
@@ -237,7 +345,7 @@ def main(argv=None):
     pa.add_argument("scenario", nargs="?", default="all", choices=["all", *past.SCENARIOS])
     pa.set_defaults(fn=cmd_past)
 
-    ph = sub.add_parser("physics", help="real-physics simulations: relativity, wormholes, dimensions, matter/energy, waves")
+    ph = sub.add_parser("physics", help="real-physics simulations: relativity, wormholes, dimensions, matter/energy, waves, squeezing, two times, entropy")
     ph.add_argument("topic", nargs="?", default="all", choices=["all", *TOPICS])
     ph.set_defaults(fn=cmd_physics)
 
